@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dziennik Tradera - Trading Journal</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darker: '#0b0f19',
+                        card: '#111827',
+                        border: '#1f2937'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-darker text-gray-100 min-h-screen font-sans antialiased">
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-border pb-6">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
+                    <i class="fa-solid fa-chart-line text-emerald-500"></i> Dziennik Tradera
+                </h1>
+                <p class="text-gray-400 text-sm mt-1">Długoterminowy test taktyk tradingowych zsynchronizowany z Twoim systemem</p>
+            </div>
+            <div class="flex gap-3 mt-4 md:mt-0">
+                <button onclick="exportData()" class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium border border-border transition flex items-center gap-2">
+                    <i class="fa-solid fa-download"></i> Eksport JSON
+                </button>
+                <label class="bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium border border-border transition flex items-center gap-2 cursor-pointer">
+                    <i class="fa-solid fa-upload"></i> Import JSON
+                    <input type="file" id="importFile" accept=".json" class="hidden" onchange="importData(event)">
+                </label>
+                <button onclick="openModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow-lg shadow-emerald-900/20">
+                    <i class="fa-solid fa-plus"></i> Dodaj Trade
+                </button>
+            </div>
+        </header>
+
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-card p-5 rounded-xl border border-border shadow-sm">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Stan Konta</p>
+                <h3 id="kpiBalance" class="text-2xl font-bold text-white mt-1">$0.00</h3>
+                <span id="kpiProfit" class="text-xs font-medium text-emerald-400 mt-1 inline-block">Łączny wynik: $0</span>
+            </div>
+            <div class="bg-card p-5 rounded-xl border border-border shadow-sm">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Winrate (Skuteczność)</p>
+                <h3 id="kpiWinrate" class="text-2xl font-bold text-white mt-1">0%</h3>
+                <span id="kpiWinsLosses" class="text-xs font-medium text-gray-400 mt-1 inline-block">Wygrane: 0 | Przegrane: 0</span>
+            </div>
+            <div class="bg-card p-5 rounded-xl border border-border shadow-sm">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Średnie RR</p>
+                <h3 id="kpiAvgRR" class="text-2xl font-bold text-white mt-1">0.00</h3>
+                <span class="text-xs font-medium text-gray-400 mt-1 inline-block">Średni stosunek zysku do ryzyka</span>
+            </div>
+            <div class="bg-card p-5 rounded-xl border border-border shadow-sm">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Liczba Transakcji</p>
+                <h3 id="kpiTotalTrades" class="text-2xl font-bold text-white mt-1">0</h3>
+                <span class="text-xs font-medium text-gray-400 mt-1 inline-block">Wszystkie wpisy w dzienniku</span>
+            </div>
+        </div>
+
+        <!-- Chart Section -->
+        <div class="bg-card p-6 rounded-xl border border-border mb-8 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-white"><i class="fa-solid fa-chart-area text-indigo-400 mr-2"></i> Krzywa Kapitału (Equity Curve)</h2>
+            </div>
+            <div class="h-72 w-full">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trades Table Section -->
+        <div class="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+            <div class="p-6 border-b border-border flex justify-between items-center">
+                <h2 class="text-lg font-semibold text-white"><i class="fa-solid fa-table-list text-amber-400 mr-2"></i> Historia Transakcji</h2>
+                <button onclick="clearAllData()" class="text-red-400 hover:text-red-300 text-xs font-medium transition">Usuń wszystkie dane</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-gray-900/50 text-gray-400 uppercase text-xs tracking-wider border-b border-border">
+                            <th class="p-4">Nr</th>
+                            <th class="p-4">Data</th>
+                            <th class="p-4">Para</th>
+                            <th class="p-4">Sesja</th>
+                            <th class="p-4">Pozycja</th>
+                            <th class="p-4">RR</th>
+                            <th class="p-4">Wynik</th>
+                            <th class="p-4">Stan Konta ($)</th>
+                            <th class="p-4">Notatki / Linki</th>
+                            <th class="p-4 text-right">Akcje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradesTableBody" class="divide-y divide-border text-gray-300">
+                        <!-- Dynamic rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Add/Edit Trade -->
+    <div id="tradeModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-card border border-border rounded-xl w-full max-w-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="modalTitle" class="text-xl font-bold text-white">Nowa Transakcja</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="tradeForm" onsubmit="saveTrade(event)" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" id="tradeIndex">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Nr Transakcji</label>
+                    <input type="number" id="tradeNr" required class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Data</label>
+                    <input type="date" id="tradeDate" required class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Para Walutowa / Rynek</label>
+                    <input type="text" id="tradePair" placeholder="np. EUR/USD" required class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Sesja</label>
+                    <select id="tradeSession" class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                        <option value="9:31 - LDN OPEN">9:31 - LDN OPEN</option>
+                        <option value="NY OPEN">NY OPEN</option>
+                        <option value="ASIA SESSION">ASIA SESSION</option>
+                        <option value="LONDON SESSION">LONDON SESSION</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Pozycja</label>
+                    <select id="tradePosition" class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                        <option value="LONG 📈">LONG 📈</option>
+                        <option value="SHORT 📉">SHORT 📉</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">RR (Risk-Reward)</label>
+                    <input type="number" step="0.1" id="tradeRR" placeholder="np. 2.5 lub -1" required class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Wynik</label>
+                    <select id="tradeWinratio" class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                        <option value="Wygrana">Wygrana</option>
+                        <option value="Przegrana">Przegrana</option>
+                        <option value="BE">BE (Break Even)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Stan Konta ($)</label>
+                    <input type="number" step="0.01" id="tradeBalance" placeholder="np. 50000" required class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Link do Analizy / Wykresu (TradingView)</label>
+                    <input type="url" id="tradeLink" placeholder="https://www.tradingview.com/..." class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-400 mb-1">Notatki</label>
+                    <textarea id="tradeNotes" rows="2" placeholder="Wnioski z transakcji..." class="w-full bg-darker border border-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"></textarea>
+                </div>
+                <div class="md:col-span-2 flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeModal()" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm font-medium transition">Anuluj</button>
+                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition">Zapisz transakcję</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        let trades = JSON.parse(localStorage.getItem('trader_journal_data')) || [
+            { nr: 1, date: '2024-05-25', pair: 'EUR/USD', session: '9:31 - LDN OPEN', position: 'LONG 📈', rr: 6.5, winratio: 'Wygrana', balance: 50000, link: 'https://www.tradingview.com', notes: 'Przykład transakcji' },
+            { nr: 2, date: '2024-05-26', pair: 'EUR/USD', session: 'NY OPEN', position: 'SHORT 📉', rr: -1.0, winratio: 'Przegrana', balance: 49000, link: '', notes: 'Błędne wejście' },
+            { nr: 3, date: '2024-05-27', pair: 'GBP/USD', session: 'LONDON SESSION', position: 'LONG 📈', rr: 3.5, winratio: 'Wygrana', balance: 52500, link: '', notes: 'Świetny setup' }
+        ];
+
+        let equityChart = null;
+
+        function init() {
+            renderTable();
+            updateKPIs();
+            renderChart();
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('trader_journal_data', JSON.stringify(trades));
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tradesTableBody');
+            tbody.innerHTML = '';
+
+            if (trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-gray-500">Brak zapisanych transakcji. Kliknij "Dodaj Trade", aby zacząć.</td></tr>`;
+                return;
+            }
+
+            trades.forEach((t, index) => {
+                let badgeColor = t.winratio === 'Wygrana' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                                 t.winratio === 'Przegrana' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+
+                let row = document.createElement('tr');
+                row.className = 'hover:bg-gray-800/50 transition border-b border-border/50';
+                row.innerHTML = `
+                    <td class="p-4 font-semibold text-white">${t.nr}</td>
+                    <td class="p-4 text-gray-400">${t.date}</td>
+                    <td class="p-4 font-medium text-white">${t.pair}</td>
+                    <td class="p-4 text-gray-400 text-xs">${t.session}</td>
+                    <td class="p-4"><span class="font-semibold ${t.position.includes('LONG') ? 'text-emerald-400' : 'text-red-400'}">${t.position}</span></td>
+                    <td class="p-4 font-mono">${t.rr}</td>
+                    <td class="p-4"><span class="px-2.5 py-1 rounded-full text-xs font-medium border ${badgeColor}">${t.winratio}</span></td>
+                    <td class="p-4 font-mono font-bold text-white">$${Number(t.balance).toLocaleString()}</td>
+                    <td class="p-4 text-xs text-gray-400 max-w-xs truncate">
+                        ${t.link ? `<a href="${t.link}" target="_blank" class="text-indigo-400 underline mr-2"><i class="fa-solid fa-link"></i> Wykres</a>` : ''}
+                        ${t.notes || ''}
+                    </td>
+                    <td class="p-4 text-right space-x-2">
+                        <button onclick="editTrade(${index})" class="text-gray-400 hover:text-white transition"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteTrade(${index})" class="text-red-400 hover:text-red-300 transition"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateKPIs() {
+            const totalTrades = trades.length;
+            if (totalTrades === 0) {
+                document.getElementById('kpiBalance').innerText = '$0.00';
+                document.getElementById('kpiProfit').innerText = 'Łączny wynik: $0';
+                document.getElementById('kpiWinrate').innerText = '0%';
+                document.getElementById('kpiWinsLosses').innerText = 'Wygrane: 0 | Przegrane: 0';
+                document.getElementById('kpiAvgRR').innerText = '0.00';
+                document.getElementById('kpiTotalTrades').innerText = '0';
+                return;
+            }
+
+            const latestBalance = Number(trades[trades.length - 1].balance);
+            const initialBalance = Number(trades[0].balance);
+            const netProfit = latestBalance - initialBalance;
+
+            const wins = trades.filter(t => t.winratio === 'Wygrana').length;
+            const losses = trades.filter(t => t.winratio === 'Przegrana').length;
+            const winrate = ((wins / totalTrades) * 100).toFixed(1);
+
+            const totalRR = trades.reduce((acc, t) => acc + Number(t.rr), 0);
+            const avgRR = (totalRR / totalTrades).toFixed(2);
+
+            document.getElementById('kpiBalance').innerText = `$${latestBalance.toLocaleString()}`;
+            document.getElementById('kpiProfit').innerText = `Wynik: ${netProfit >= 0 ? '+' : ''}$${netProfit.toLocaleString()}`;
+            document.getElementById('kpiProfit').className = `text-xs font-medium mt-1 inline-block ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`;
+            
+            document.getElementById('kpiWinrate').innerText = `${winrate}%`;
+            document.getElementById('kpiWinsLosses').innerText = `Wygrane: ${wins} | Przegrane: ${losses}`;
+            document.getElementById('kpiAvgRR').innerText = avgRR;
+            document.getElementById('kpiTotalTrades').innerText = totalTrades;
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            
+            const labels = trades.map(t => `#${t.nr} (${t.date})`);
+            const data = trades.map(t => t.balance);
+
+            if (equityChart) {
+                equityChart.destroy();
+            }
+
+            equityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Stan Konta ($)',
+                        data: data,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.05)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.2,
+                        pointBackgroundColor: '#10b981',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(31, 41, 55, 0.5)' },
+                            ticks: { color: '#9ca3af', font: { size: 11 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(31, 41, 55, 0.5)' },
+                            ticks: { color: '#9ca3af', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function openModal(editIndex = null) {
+            document.getElementById('tradeModal').classList.remove('hidden');
+            document.getElementById('tradeModal').classList.add('flex');
+            
+            if (editIndex !== null) {
+                document.getElementById('modalTitle').innerText = 'Edytuj Transakcję';
+                document.getElementById('tradeIndex').value = editIndex;
+                const t = trades[editIndex];
+                document.getElementById('tradeNr').value = t.nr;
+                document.getElementById('tradeDate').value = t.date;
+                document.getElementById('tradePair').value = t.pair;
+                document.getElementById('tradeSession').value = t.session;
+                document.getElementById('tradePosition').value = t.position;
+                document.getElementById('tradeRR').value = t.rr;
+                document.getElementById('tradeWinratio').value = t.winratio;
+                document.getElementById('tradeBalance').value = t.balance;
+                document.getElementById('tradeLink').value = t.link || '';
+                document.getElementById('tradeNotes').value = t.notes || '';
+            } else {
+                document.getElementById('modalTitle').innerText = 'Nowa Transakcja';
+                document.getElementById('tradeForm').reset();
+                document.getElementById('tradeIndex').value = '';
+                if (trades.length > 0) {
+                    document.getElementById('tradeNr').value = trades[trades.length - 1].nr + 1;
+                    document.getElementById('tradeBalance').value = trades[trades.length - 1].balance;
+                } else {
+                    document.getElementById('tradeNr').value = 1;
+                    document.getElementById('tradeBalance').value = 50000;
+                }
+                document.getElementById('tradeDate').valueAsDate = new Date();
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('tradeModal').classList.remove('flex');
+            document.getElementById('tradeModal').classList.add('hidden');
+        }
+
+        function saveTrade(event) {
+            event.preventDefault();
+            const index = document.getElementById('tradeIndex').value;
+            
+            const tradeObj = {
+                nr: Number(document.getElementById('tradeNr').value),
+                date: document.getElementById('tradeDate').value,
+                pair: document.getElementById('tradePair').value,
+                session: document.getElementById('tradeSession').value,
+                position: document.getElementById('tradePosition').value,
+                rr: Number(document.getElementById('tradeRR').value),
+                winratio: document.getElementById('tradeWinratio').value,
+                balance: Number(document.getElementById('tradeBalance').value),
+                link: document.getElementById('tradeLink').value,
+                notes: document.getElementById('tradeNotes').value
+            };
+
+            if (index === '') {
+                trades.push(tradeObj);
+            } else {
+                trades[index] = tradeObj;
+            }
+
+            // Sort trades by transaction number/date
+            trades.sort((a, b) => a.nr - b.nr);
+
+            saveToLocalStorage();
+            init();
+            closeModal();
+        }
+
+        function editTrade(index) {
+            openModal(index);
+        }
+
+        function deleteTrade(index) {
+            if (confirm('Czy na pewno chcesz usunąć tę transakcję?')) {
+                trades.splice(index, 1);
+                saveToLocalStorage();
+                init();
+            }
+        }
+
+        function clearAllData() {
+            if (confirm('Czy na pewno chcesz wyczyścić cały dziennik? Ta operacja jest nieodwracalna.')) {
+                trades = [];
+                saveToLocalStorage();
+                init();
+            }
+        }
+
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(trades, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "dziennik_tradera_backup.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+                    if (Array.isArray(parsed)) {
+                        trades = parsed;
+                        saveToLocalStorage();
+                        init();
+                        alert('Dane zostały pomyślnie zaimportowane!');
+                    } else {
+                        alert('Niepoprawny format pliku JSON.');
+                    }
+                } catch (err) {
+                    alert('Błąd podczas odczytu pliku.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
